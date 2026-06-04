@@ -279,23 +279,50 @@ public class EmployeeCheckInFragment extends Fragment {
     private void loadTodayAttendance() {
         if (currentUser == null || currentUser.getEmployeeId() == null) return;
         
-        String dateId = TimeUtils.getCurrentDateId();
-        String recordId = currentUser.getEmployeeId() + "_" + dateId;
+        String todayDateId = TimeUtils.getCurrentDateId();
+        String yesterdayDateId = TimeUtils.getYesterdayDateId();
+
+        String todayRecordId = currentUser.getEmployeeId() + "_" + todayDateId;
+        String yesterdayRecordId = currentUser.getEmployeeId() + "_" + yesterdayDateId;
 
         // Safely detach previous attendance listener to prevent redundant background duplicates [2]
         if (attendanceListenerRegistration != null) {
             attendanceListenerRegistration.remove();
         }
 
-        attendanceListenerRegistration = db.collection("attendance").document(recordId).addSnapshotListener((snapshot, e) -> {
-            if (binding == null) return; // Safety check [2]
-            if (snapshot != null && snapshot.exists()) {
-                todayRecord = snapshot.toObject(AttendanceRecord.class);
-            } else {
-                todayRecord = null;
-            }
-            updateUIBasedOnStatus();
-        });
+        // Active Session Check: Query yesterday's document first to resolve cross-midnight shifts
+        attendanceListenerRegistration = db.collection("attendance").document(yesterdayRecordId)
+                .addSnapshotListener((yesterdaySnapshot, e) -> {
+                    if (binding == null) return;
+                    
+                    if (yesterdaySnapshot != null && yesterdaySnapshot.exists()) {
+                        AttendanceRecord yesterdayRecord = yesterdaySnapshot.toObject(AttendanceRecord.class);
+                        if (yesterdayRecord != null && yesterdayRecord.getCheckInTime() != null && 
+                            (yesterdayRecord.getCheckOutTime() == null || yesterdayRecord.getCheckOutTime().isEmpty())) {
+                            
+                            // An active, incomplete overnight shift started yesterday. Lock onto it.
+                            todayRecord = yesterdayRecord;
+                            updateUIBasedOnStatus();
+                            return;
+                        }
+                    }
+
+                    // No incomplete shift yesterday. Safely switch to listening to today's record.
+                    if (attendanceListenerRegistration != null) {
+                        attendanceListenerRegistration.remove();
+                    }
+
+                    attendanceListenerRegistration = db.collection("attendance").document(todayRecordId)
+                            .addSnapshotListener((todaySnapshot, err) -> {
+                                if (binding == null) return;
+                                if (todaySnapshot != null && todaySnapshot.exists()) {
+                                    todayRecord = todaySnapshot.toObject(AttendanceRecord.class);
+                                } else {
+                                    todayRecord = null;
+                                }
+                                updateUIBasedOnStatus();
+                            });
+                });
     }
 
     /**
@@ -432,13 +459,15 @@ public class EmployeeCheckInFragment extends Fragment {
     }
 
     private void performCheckIn(Location loc, double distance, boolean isRemoteStart) {
+        String recordId;
         String dateId = TimeUtils.getCurrentDateId();
-        String recordId = currentUser.getEmployeeId() + "_" + dateId;
 
         AttendanceRecord record;
         if (todayRecord != null) {
             record = todayRecord; 
+            recordId = todayRecord.getRecordId();
         } else {
+            recordId = currentUser.getEmployeeId() + "_" + dateId;
             record = new AttendanceRecord(currentUser.getEmployeeId(), currentUser.getName(), dateId, TimeUtils.getCurrentTimestamp());
             record.setRecordId(recordId);
         }
@@ -570,7 +599,7 @@ public class EmployeeCheckInFragment extends Fragment {
     private String getAddressName(Location loc) {
         try {
             Geocoder geocoder = new Geocoder(requireContext(), Locale.getDefault());
-            List<Address> addresses = geocoder.getFromLocation(loc.getLatitude(), loc.getLongitude(), 1);
+            List = geocoder.getFromLocation(loc.getLatitude(), loc.getLongitude(), 1);
             if (addresses != null && !addresses.isEmpty()) {
                 Address addr = addresses.get(0);
                 String street = addr.getThoroughfare() != null ? addr.getThoroughfare() : "";
