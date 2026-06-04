@@ -57,36 +57,74 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
                 String empId = task.getResult().getString("employeeId");
                 
                 if (empId != null && !empId.isEmpty()) {
-                    String dateId = TimeUtils.getCurrentDateId();
-                    String recordId = empId + "_" + dateId;
+                    String todayDateId = TimeUtils.getCurrentDateId();
+                    String yesterdayDateId = TimeUtils.getYesterdayDateId();
 
-                    // 2. Fetch today's local-cache/remote attendance record
-                    db.collection("attendance").document(recordId).get().addOnCompleteListener(attTask -> {
-                        boolean skipAlarm = false;
+                    String todayRecordId = empId + "_" + todayDateId;
+                    String yesterdayRecordId = empId + "_" + yesterdayDateId;
 
-                        if (attTask.isSuccessful() && attTask.getResult() != null && attTask.getResult().exists()) {
-                            AttendanceRecord record = attTask.getResult().toObject(AttendanceRecord.class);
+                    // 2. Query yesterday's record first to resolve cross-midnight shifts
+                    db.collection("attendance").document(yesterdayRecordId).get().addOnCompleteListener(yesTask -> {
+                        boolean handled = false;
+
+                        if (yesTask.isSuccessful() && yesTask.getResult() != null && yesTask.getResult().exists()) {
+                            AttendanceRecord record = yesTask.getResult().toObject(AttendanceRecord.class);
                             
-                            if (record != null) {
-                                // 3. Analyze if the action for this specific alarm is already completed
+                            if (record != null && record.getCheckInTime() != null && 
+                                (record.getCheckOutTime() == null || record.getCheckOutTime().isEmpty())) {
+                                
+                                // An incomplete overnight shift is active from yesterday
+                                boolean skipAlarm = false;
                                 if ("about_to_check_in".equals(finalReminderType) || "late_check_in".equals(finalReminderType)) {
-                                    if (record.getCheckInTime() != null && !record.getCheckInTime().isEmpty()) {
-                                        skipAlarm = true; // Employee is already checked in, skip false alarm
-                                    }
+                                    // They are currently still checked in from yesterday. Skip new check-in alarms.
+                                    skipAlarm = true;
                                 } else if ("about_to_check_out".equals(finalReminderType)) {
-                                    if (record.getCheckOutTime() != null && !record.getCheckOutTime().isEmpty()) {
-                                        skipAlarm = true; // Employee is already checked out, skip false alarm
-                                    }
+                                    // They have not checked out yet. We DO NOT skip checkout alarms.
+                                    skipAlarm = false; 
                                 }
+
+                                if (!skipAlarm) {
+                                    fireNotificationAndVoice(context, finalReminderType);
+                                } else {
+                                    Log.d(TAG, "Aborting alarm notification: Yesterday's overnight shift is still active.");
+                                }
+                                handled = true;
                             }
                         }
 
-                        if (!skipAlarm) {
-                            fireNotificationAndVoice(context, finalReminderType);
-                        } else {
-                            Log.d(TAG, "Aborting alarm notification: Attendance action already recorded.");
+                        if (handled) {
+                            pendingResult.finish();
+                            return;
                         }
-                        pendingResult.finish();
+
+                        // 3. Fallback: Query today's attendance record
+                        db.collection("attendance").document(todayRecordId).get().addOnCompleteListener(todayTask -> {
+                            boolean skipAlarm = false;
+
+                            if (todayTask.isSuccessful() && todayTask.getResult() != null && todayTask.getResult().exists()) {
+                                AttendanceRecord record = todayTask.getResult().toObject(AttendanceRecord.class);
+                                
+                                if (record != null) {
+                                    // Analyze if the action for this specific alarm is already completed
+                                    if ("about_to_check_in".equals(finalReminderType) || "late_check_in".equals(finalReminderType)) {
+                                        if (record.getCheckInTime() != null && !record.getCheckInTime().isEmpty()) {
+                                            skipAlarm = true; // Employee is already checked in, skip false alarm
+                                        }
+                                    } else if ("about_to_check_out".equals(finalReminderType)) {
+                                        if (record.getCheckOutTime() != null && !record.getCheckOutTime().isEmpty()) {
+                                            skipAlarm = true; // Employee is already checked out, skip false alarm
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (!skipAlarm) {
+                                fireNotificationAndVoice(context, finalReminderType);
+                            } else {
+                                Log.d(TAG, "Aborting alarm notification: Attendance action already recorded.");
+                            }
+                            pendingResult.finish();
+                        });
                     });
                 } else {
                     fireNotificationAndVoice(context, finalReminderType);
