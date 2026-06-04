@@ -4,6 +4,7 @@ import android.util.Log;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +31,15 @@ public class TimeUtils {
      */
     public static String getCurrentDateId() {
         return DATE_ID_FORMAT.format(new Date());
+    }
+
+    /**
+     * @return Yesterday's date string (e.g., "2026-01-21") used to search for overnight shifts.
+     */
+    public static String getYesterdayDateId() {
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.DAY_OF_YEAR, -1);
+        return DATE_ID_FORMAT.format(cal.getTime());
     }
 
     /**
