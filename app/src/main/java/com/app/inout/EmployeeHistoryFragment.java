@@ -38,6 +38,7 @@ import java.util.Locale;
  * UPDATED: Displays updated 14-column logic including Emergency Leave remarks.
  * DYNAMIC BYPASS:
  * - Redirects all Firestore reads to the secondary named app instance "admin_app".
+ * - Targets profiles using the aligned anonymous UID to keep your original security rules untouched.
  */
 public class EmployeeHistoryFragment extends Fragment {
 
@@ -109,10 +110,22 @@ public class EmployeeHistoryFragment extends Fragment {
     private void fetchEmployeeIdAndLoadLogs() {
         if (mAuth.getCurrentUser() == null) return;
         
-        String uid = mAuth.getCurrentUser().getUid();
+        // Get the active Anonymous UID of the admin_app to match your original ruleset
+        String adminUid = null;
+        try {
+            FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+            adminUid = FirebaseAuth.getInstance(adminApp).getUid();
+        } catch (Exception e) {
+            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+        }
+
+        if (adminUid == null) {
+            adminUid = mAuth.getCurrentUser().getUid(); // fallback
+        }
+
         binding.progressBar.setVisibility(View.VISIBLE);
 
-        db.collection("users").document(uid).get()
+        db.collection("users").document(adminUid).get()
                 .addOnSuccessListener(documentSnapshot -> {
                     if (documentSnapshot.exists()) {
                         currentUserProfile = documentSnapshot.toObject(User.class);
