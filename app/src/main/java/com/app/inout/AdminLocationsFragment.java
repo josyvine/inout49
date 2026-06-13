@@ -17,6 +17,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -25,6 +26,7 @@ import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.WriteBatch;
 import com.inout.app.databinding.FragmentAdminLocationsBinding;
 import com.inout.app.models.CompanyConfig;
+import com.inout.app.utils.FirebaseManager;
 import com.inout.app.utils.LocationHelper;
 
 import java.io.IOException;
@@ -35,6 +37,8 @@ import java.util.Locale;
 /**
  * Updated Fragment for Office Locations.
  * Features: Remote Search, GPS Capture, Map Selection, and Interactive Selection/Deletion.
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads and writes to the secondary named app instance "admin_app".
  */
 public class AdminLocationsFragment extends Fragment implements LocationAdapter.OnLocationActionListener {
 
@@ -59,7 +63,14 @@ public class AdminLocationsFragment extends Fragment implements LocationAdapter.
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        db = FirebaseFirestore.getInstance();
+        // Dynamic bypass: Initialize Firestore database pointing to secondary app
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
+        
         locationHelper = new LocationHelper(requireContext());
         savedLocations = new ArrayList<>();
 
