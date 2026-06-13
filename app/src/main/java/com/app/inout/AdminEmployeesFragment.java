@@ -21,6 +21,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -31,6 +32,7 @@ import com.inout.app.databinding.FragmentAdminEmployeesBinding;
 import com.inout.app.models.AttendanceRecord;
 import com.inout.app.models.User;
 import com.inout.app.models.CompanyConfig;
+import com.inout.app.utils.FirebaseManager;
 import com.inout.app.utils.TimeUtils;
 
 import java.util.ArrayList;
@@ -42,6 +44,8 @@ import java.util.Locale;
  * Updated Fragment to handle Multi-Selection, Bulk Deletion, 
  * Individual/Bulk Location Assignment, Traveling Mode, and Shift Timing.
  * UPDATED: Handles Emergency Leave and Medical Leave (Paid/Unpaid) approvals.
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads and writes to the secondary named app instance "admin_app".
  */
 public class AdminEmployeesFragment extends Fragment implements EmployeeListAdapter.OnEmployeeActionListener {
 
@@ -62,7 +66,14 @@ public class AdminEmployeesFragment extends Fragment implements EmployeeListAdap
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        db = FirebaseFirestore.getInstance();
+        // Dynamic bypass: Initialize Firestore database pointing to secondary app
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
+        
         employeeList = new ArrayList<>();
         locationList = new ArrayList<>();
         
