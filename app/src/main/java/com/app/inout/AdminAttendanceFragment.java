@@ -28,7 +28,7 @@ import java.util.List;
  * 1. Select employee from Spinner.
  * 2. Opens the Professional Attendance Profile Pop-up (CV-style).
  * DYNAMIC BYPASS:
- * - Redirects all Firestore reads to the secondary named app instance "admin_app".
+ * - Redirects all Firestore database reads to the secondary named app instance "admin_app".
  */
 public class AdminAttendanceFragment extends Fragment {
 
