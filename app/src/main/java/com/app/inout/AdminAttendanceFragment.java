@@ -13,10 +13,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.inout.app.databinding.FragmentAdminAttendanceBinding;
 import com.inout.app.models.User;
+import com.inout.app.utils.FirebaseManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +27,8 @@ import java.util.List;
  * Admin view for Attendance.
  * 1. Select employee from Spinner.
  * 2. Opens the Professional Attendance Profile Pop-up (CV-style).
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads to the secondary named app instance "admin_app".
  */
 public class AdminAttendanceFragment extends Fragment {
 
@@ -44,7 +48,14 @@ public class AdminAttendanceFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        db = FirebaseFirestore.getInstance();
+        // Dynamic bypass: Initialize Firestore database pointing to secondary app
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
+        
         employees = new ArrayList<>();
 
         // Load the list of employees into the spinner first
