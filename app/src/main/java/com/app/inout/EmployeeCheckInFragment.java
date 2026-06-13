@@ -52,6 +52,7 @@ import java.util.concurrent.TimeUnit;
  * UPDATED: Includes AdMob Banner integration and lifecycle management.
  * DYNAMIC BYPASS:
  * - Redirects all Firestore reads and writes to the secondary named app instance "admin_app".
+ * - Targets profiles using the aligned anonymous UID to keep your original security rules untouched.
  */
 public class EmployeeCheckInFragment extends Fragment {
 
@@ -136,14 +137,26 @@ public class EmployeeCheckInFragment extends Fragment {
 
     private void loadUserDataAndStatus() {
         if (mAuth.getCurrentUser() == null) return;
-        String uid = mAuth.getCurrentUser().getUid();
+        
+        // Get the active Anonymous UID of the admin_app to match your original ruleset
+        String adminUid = null;
+        try {
+            FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+            adminUid = FirebaseAuth.getInstance(adminApp).getUid();
+        } catch (Exception e) {
+            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+        }
+
+        if (adminUid == null) {
+            adminUid = mAuth.getCurrentUser().getUid(); // fallback
+        }
 
         // Safely detach previous user listener if active [2]
         if (userListenerRegistration != null) {
             userListenerRegistration.remove();
         }
         
-        userListenerRegistration = db.collection("users").document(uid).addSnapshotListener((doc, error) -> {
+        userListenerRegistration = db.collection("users").document(adminUid).addSnapshotListener((doc, error) -> {
             if (error != null) return;
             if (binding == null) return; // Safety check [2]
             
