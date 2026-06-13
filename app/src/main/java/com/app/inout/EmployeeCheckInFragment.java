@@ -23,6 +23,7 @@ import androidx.fragment.app.Fragment;
 
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdView;
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -33,6 +34,7 @@ import com.inout.app.models.AttendanceRecord;
 import com.inout.app.models.CompanyConfig;
 import com.inout.app.models.User;
 import com.inout.app.utils.BiometricHelper;
+import com.inout.app.utils.FirebaseManager;
 import com.inout.app.utils.LocationHelper;
 import com.inout.app.utils.TimeUtils;
 
@@ -48,6 +50,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Fragment where employees perform Check-In, Transit, and Check-Out.
  * UPDATED: Includes AdMob Banner integration and lifecycle management.
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads and writes to the secondary named app instance "admin_app".
  */
 public class EmployeeCheckInFragment extends Fragment {
 
@@ -86,7 +90,14 @@ public class EmployeeCheckInFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        db = FirebaseFirestore.getInstance();
+        // Dynamic bypass: Initialize Firestore database pointing to secondary app
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
+        
         mAuth = FirebaseAuth.getInstance();
         locationHelper = new LocationHelper(requireContext());
 
