@@ -17,9 +17,9 @@ import java.util.List;
  * This allows the app to connect to different Firebase projects based on the
  * configuration uploaded by the Admin or scanned by the Employee.
  * 
- * UPDATED: 
- * 1. Default instance ([DEFAULT]) points permanently to CentralConfig (developer project) for Auth.
- * 2. Scanned configurations point to a named secondary instance ("admin_app") for Database.
+ * UPDATED:
+ * - Default [DEFAULT] app points permanently to CentralConfig (developer project) for Google Auth.
+ * - Dynamic scanned configs point to a named secondary app instance ("admin_app") for Firestore database access.
  */
 public class FirebaseManager {
 
@@ -51,7 +51,7 @@ public class FirebaseManager {
 
             if (!defaultAppExists) {
                 FirebaseApp.initializeApp(context, defaultOptions);
-                Log.d(TAG, "Central Firebase [DEFAULT] initialized successfully for Google Auth.");
+                Log.d(TAG, "Central Firebase [DEFAULT] initialized successfully.");
             } else {
                 Log.d(TAG, "Central Firebase [DEFAULT] already exists.");
             }
@@ -77,7 +77,7 @@ public class FirebaseManager {
 
                 if (adminAppExists) {
                     FirebaseApp app = FirebaseApp.getInstance(ADMIN_APP_NAME);
-                    // If the project ID changed, re-initialize named app
+                    // If the project ID has changed, re-initialize named app
                     if (!app.getOptions().getProjectId().equals(options.getProjectId())) {
                          Log.w(TAG, "admin_app project ID mismatch. Re-initializing secondary app.");
                          app.delete();
