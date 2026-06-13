@@ -13,6 +13,7 @@ import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -23,6 +24,7 @@ import com.inout.app.databinding.FragmentEmployeeHistoryBinding;
 import com.inout.app.models.AttendanceRecord;
 import com.inout.app.models.User;
 import com.inout.app.utils.EncryptionHelper;
+import com.inout.app.utils.FirebaseManager;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -34,6 +36,8 @@ import java.util.Locale;
 /**
  * Fragment for Employees to view their own personal attendance history.
  * UPDATED: Displays updated 14-column logic including Emergency Leave remarks.
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads to the secondary named app instance "admin_app".
  */
 public class EmployeeHistoryFragment extends Fragment {
 
@@ -61,7 +65,14 @@ public class EmployeeHistoryFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        db = FirebaseFirestore.getInstance();
+        // Dynamic bypass: Initialize Firestore database pointing to secondary app
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
+        
         mAuth = FirebaseAuth.getInstance();
         historyLogs = new ArrayList<>();
 
