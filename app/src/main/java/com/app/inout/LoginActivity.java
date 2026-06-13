@@ -42,7 +42,8 @@ import com.inout.app.utils.FirebaseManager;
  * UPDATED: Integrated AdMob Banner Ad in the footer.
  * DYNAMIC BYPASS:
  * - Google Sign-In is executed on the [DEFAULT] app linked to CentralConfig.
- * - Profile and User Firestore records are stored on the secondary named app "admin_app".
+ * - Profiles and User Firestore records are stored on the secondary named app "admin_app" 
+ *   using aligned Anonymous UIDs to keep your original security rules untouched.
  */
 public class LoginActivity extends AppCompatActivity {
 
@@ -123,7 +124,7 @@ public class LoginActivity extends AppCompatActivity {
         AdRequest adRequest = new AdRequest.Builder().build();
         mAdView.loadAd(adRequest);
 
-        // Dynamic bypass: Silently authenticate anonymoulsy to the Admin's Firestore (secondary app)
+        // Dynamic bypass: Silently authenticate anonymously on the Admin's Firestore (secondary app)
         // This is crucial to bypass their SHA-1 requirements while maintaining DB security locks.
         performSilentAnonymousAuth();
     }
@@ -149,7 +150,29 @@ public class LoginActivity extends AppCompatActivity {
         super.onStart();
         FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser != null) {
-            checkUserInFirestore(currentUser);
+            // Defensive timing check: Ensure secondary Anonymous Auth has completed before checking database records
+            try {
+                FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+                FirebaseAuth adminAuth = FirebaseAuth.getInstance(adminApp);
+                if (adminAuth.getCurrentUser() != null) {
+                    checkUserInFirestore(currentUser);
+                } else {
+                    binding.progressBar.setVisibility(View.VISIBLE);
+                    adminAuth.signInAnonymously()
+                            .addOnSuccessListener(authResult -> {
+                                binding.progressBar.setVisibility(View.GONE);
+                                checkUserInFirestore(currentUser);
+                            })
+                            .addOnFailureListener(e -> {
+                                binding.progressBar.setVisibility(View.GONE);
+                                Log.e(TAG, "Failed to establish secondary anonymous session on start.", e);
+                                Toast.makeText(LoginActivity.this, "Database Connection Error. Please retry.", Toast.LENGTH_SHORT).show();
+                            });
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error checking secondary login state in onStart", e);
+                checkUserInFirestore(currentUser);
+            }
         }
     }
 
@@ -181,8 +204,24 @@ public class LoginActivity extends AppCompatActivity {
     private void checkUserInFirestore(FirebaseUser firebaseUser) {
         if (firebaseUser == null) return;
 
-        DocumentReference userRef = db.collection("users").document(firebaseUser.getUid());
+        // Get the Anonymous UID of the admin_app to match your original ruleset
+        String adminUid = null;
+        try {
+            FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+            adminUid = FirebaseAuth.getInstance(adminApp).getUid();
+        } catch (Exception e) {
+            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+        }
 
+        if (adminUid == null) {
+            Toast.makeText(this, "Session initializing. Please try again in a moment.", Toast.LENGTH_SHORT).show();
+            updateUI(null);
+            return;
+        }
+
+        DocumentReference userRef = db.collection("users").document(adminUid);
+
+        final String finalAdminUid = adminUid;
         userRef.get().addOnSuccessListener(documentSnapshot -> {
             if (documentSnapshot.exists()) {
                 User user = documentSnapshot.toObject(User.class);
@@ -198,7 +237,7 @@ public class LoginActivity extends AppCompatActivity {
                     updateUI(null);
                 }
             } else {
-                createUserProfile(firebaseUser, userRef);
+                createUserProfile(firebaseUser, userRef, finalAdminUid);
             }
         }).addOnFailureListener(e -> {
             Log.e(TAG, "Error fetching user from secondary Firestore", e);
@@ -207,8 +246,9 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
 
-    private void createUserProfile(FirebaseUser firebaseUser, DocumentReference userRef) {
-        User newUser = new User(firebaseUser.getUid(), firebaseUser.getEmail(), expectedRole);
+    private void createUserProfile(FirebaseUser firebaseUser, DocumentReference userRef, String adminUid) {
+        // We store the adminUid in the User object's uid field to ensure request.auth.uid matches the path uid natively
+        User newUser = new User(adminUid, firebaseUser.getEmail(), expectedRole);
         
         if (firebaseUser.getDisplayName() != null) {
             newUser.setName(firebaseUser.getDisplayName());
