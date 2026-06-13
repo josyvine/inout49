@@ -22,6 +22,7 @@ import androidx.navigation.ui.NavigationUI;
 import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
@@ -30,7 +31,9 @@ import com.google.firebase.firestore.ListenerRegistration;
 import com.inout.app.databinding.ActivityEmployeeDashboardBinding;
 import com.inout.app.models.AttendanceRecord;
 import com.inout.app.models.User;
+import com.inout.app.utils.CentralConfig;
 import com.inout.app.utils.EncryptionHelper;
+import com.inout.app.utils.FirebaseManager;
 import com.inout.app.utils.LocationHelper;
 import com.inout.app.utils.TimeUtils;
 
@@ -42,10 +45,13 @@ import java.util.Map;
  * Handles navigation between Check-In/Out and Attendance History.
  * Monitors Admin Approval status and Profile completeness.
  * UPDATED: Handles Emergency Leave, Medical Leave, and Resume logic with real-time menu sync and spinning loader.
+ * DYNAMIC BYPASS:
+ * - Reads/Writes data directly from secondary named app "admin_app" Firestore instance.
+ * - Logout points directly to CentralConfig Google OAuth client ID parameters.
  */
 public class EmployeeDashboardActivity extends AppCompatActivity {
 
-    private static final String TAG = "EmployeeDashboardActivity"; // FIXED: Missing variable declared [3]
+    private static final String TAG = "EmployeeDashboardActivity";
     private ActivityEmployeeDashboardBinding binding;
     private FirebaseAuth mAuth;
     private FirebaseFirestore db;
@@ -60,8 +66,16 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         binding = ActivityEmployeeDashboardBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        // Central Firebase auth session tracking
         mAuth = FirebaseAuth.getInstance();
-        db = FirebaseFirestore.getInstance();
+        
+        // Target Admin's dynamic Firestore database
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
 
         setSupportActionBar(binding.toolbar);
 
@@ -310,7 +324,9 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         if (userListener != null) userListener.remove();
         if (attendanceListener != null) attendanceListener.remove();
         mAuth.signOut();
-        String webClientId = EncryptionHelper.getInstance(this).getWebClientId();
+        
+        // Dynamic bypass: Request central Google OAuth client ID cleanly
+        String webClientId = CentralConfig.WEB_CLIENT_ID;
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestIdToken(webClientId)
                 .build();
