@@ -47,7 +47,7 @@ import java.util.Map;
  * UPDATED: Handles Emergency Leave, Medical Leave, and Resume logic with real-time menu sync and spinning loader.
  * DYNAMIC BYPASS:
  * - Reads/Writes data directly from secondary named app "admin_app" Firestore instance.
- * - Logout points directly to CentralConfig Google OAuth client ID parameters.
+ * - Targets profiles using the aligned anonymous UID to keep your original security rules untouched.
  */
 public class EmployeeDashboardActivity extends AppCompatActivity {
 
@@ -66,7 +66,6 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         binding = ActivityEmployeeDashboardBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        // Central Firebase auth session tracking
         mAuth = FirebaseAuth.getInstance();
         
         // Target Admin's dynamic Firestore database
@@ -102,8 +101,21 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         FirebaseUser fbUser = mAuth.getCurrentUser();
         if (fbUser == null) return;
 
+        // Get the active Anonymous UID of the admin_app to match your original ruleset
+        String adminUid = null;
+        try {
+            FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+            adminUid = FirebaseAuth.getInstance(adminApp).getUid();
+        } catch (Exception e) {
+            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+        }
+
+        if (adminUid == null) {
+            adminUid = fbUser.getUid(); // fallback
+        }
+
         // Snapshot listener ensures we get the employeeId correctly and stay in sync
-        userListener = db.collection("users").document(fbUser.getUid()).addSnapshotListener((userDoc, error) -> {
+        userListener = db.collection("users").document(adminUid).addSnapshotListener((userDoc, error) -> {
             if (userDoc != null && userDoc.exists()) {
                 currentUser = userDoc.toObject(User.class);
                 if (currentUser != null && currentUser.getEmployeeId() != null) {
@@ -140,7 +152,20 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         FirebaseUser firebaseUser = mAuth.getCurrentUser();
         if (firebaseUser == null) return;
 
-        db.collection("users").document(firebaseUser.getUid())
+        // Get the active Anonymous UID of the admin_app to match your original ruleset
+        String adminUid = null;
+        try {
+            FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+            adminUid = FirebaseAuth.getInstance(adminApp).getUid();
+        } catch (Exception e) {
+            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+        }
+
+        if (adminUid == null) {
+            adminUid = firebaseUser.getUid(); // fallback
+        }
+
+        db.collection("users").document(adminUid)
                 .addSnapshotListener((snapshot, error) -> {
                     if (error != null) return;
 
@@ -325,7 +350,7 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         if (attendanceListener != null) attendanceListener.remove();
         mAuth.signOut();
         
-        // Dynamic bypass: Request central Google OAuth client ID cleanly
+        // Google OAuth sign-out pointing cleanly to CentralConfig Web Client ID
         String webClientId = CentralConfig.WEB_CLIENT_ID;
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestIdToken(webClientId)
