@@ -11,15 +11,20 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.inout.app.models.AttendanceRecord;
+import com.inout.app.utils.FirebaseManager;
 import com.inout.app.utils.TimeUtils;
 
 /**
  * BroadcastReceiver triggered by AlarmManager to notify employees
  * exactly one minute before their assigned shift check-in window opens [2].
  * UPDATED: Uses goAsync() to verify the attendance state in Firestore before sounding false alarms.
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads to the secondary named app instance "admin_app"
+ *   using the aligned persistent UID to bypass SHA-1 constraints and protect original rules.
  */
 public class CheckInAlarmReceiver extends BroadcastReceiver {
 
@@ -48,10 +53,29 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
             return;
         }
 
-        String uid = mAuth.getCurrentUser().getUid();
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        // Dynamic bypass: Initialize Firestore database pointing to secondary app
+        FirebaseFirestore db;
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
 
-        // 1. Fetch user's assigned employee ID dynamically from Firestore
+        // Get the active persistent UID of the admin_app to match your original ruleset
+        String uid = null;
+        try {
+            FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
+            uid = FirebaseAuth.getInstance(adminApp).getUid();
+        } catch (Exception e) {
+            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+        }
+
+        if (uid == null) {
+            uid = mAuth.getCurrentUser().getUid(); // fallback to Google UID
+        }
+
+        // 1. Fetch user's assigned employee ID dynamically from secondary Firestore
         db.collection("users").document(uid).get().addOnCompleteListener(task -> {
             if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
                 String empId = task.getResult().getString("employeeId");
@@ -131,13 +155,13 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
                     pendingResult.finish();
                 }
             } else {
+                // Task failed or user profile does not exist. Trigger fallback safely.
+                if (!task.isSuccessful() && task.getException() != null) {
+                    Log.e(TAG, "Query failed. Firing fallback alarm.", task.getException());
+                }
                 fireNotificationAndVoice(context, finalReminderType);
                 pendingResult.finish();
             }
-        }).addOnFailureListener(e -> {
-            Log.e(TAG, "Constraint check failed, firing fallback alarm", e);
-            fireNotificationAndVoice(context, finalReminderType);
-            pendingResult.finish();
         });
     }
 
