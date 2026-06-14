@@ -17,8 +17,16 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.firebase.auth.FirebaseAuth;
 import com.inout.app.databinding.ActivityAdminDashboardBinding;
+import com.inout.app.utils.CentralConfig;
 import com.inout.app.utils.EncryptionHelper;
 
+/**
+ * Main dashboard for Admins.
+ * Orchestrates administrative navigation fragments and utilities.
+ * DYNAMIC BYPASS:
+ * - Google Sign-Out points directly to CentralConfig Google OAuth client ID parameters
+ *   to avoid null crashes on SHA-free Admin projects.
+ */
 public class AdminDashboardActivity extends AppCompatActivity {
 
     private ActivityAdminDashboardBinding binding;
@@ -97,8 +105,9 @@ public class AdminDashboardActivity extends AppCompatActivity {
         // 1. Sign out from Firebase
         mAuth.signOut();
         
-        // 2. Configure and sign out from Google to allow picking a different Gmail next time
-        String webClientId = EncryptionHelper.getInstance(this).getWebClientId();
+        // 2. Configure and sign out from Google pointing to your Central Client ID
+        // This is crucial to prevent null pointer crashes on SHA-free Admin projects.
+        String webClientId = CentralConfig.WEB_CLIENT_ID;
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestIdToken(webClientId)
                 .build();
