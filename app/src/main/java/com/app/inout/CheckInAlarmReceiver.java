@@ -62,6 +62,9 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
             db = FirebaseFirestore.getInstance();
         }
 
+        // FIXED: Declare a final copy of the database instance to pass Java lambda checks
+        final FirebaseFirestore finalDb = db;
+
         // Get the active persistent UID of the admin_app to match your original ruleset
         String uid = null;
         try {
@@ -75,8 +78,11 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
             uid = mAuth.getCurrentUser().getUid(); // fallback to Google UID
         }
 
+        // FIXED: Declare a final copy of the UID variable to pass Java lambda checks
+        final String finalUid = uid;
+
         // 1. Fetch user's assigned employee ID dynamically from secondary Firestore
-        db.collection("users").document(uid).get().addOnCompleteListener(task -> {
+        finalDb.collection("users").document(finalUid).get().addOnCompleteListener(task -> {
             if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
                 String empId = task.getResult().getString("employeeId");
                 
@@ -88,7 +94,7 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
                     String yesterdayRecordId = empId + "_" + yesterdayDateId;
 
                     // 2. Query yesterday's record first to resolve cross-midnight shifts
-                    db.collection("attendance").document(yesterdayRecordId).get().addOnCompleteListener(yesTask -> {
+                    finalDb.collection("attendance").document(yesterdayRecordId).get().addOnCompleteListener(yesTask -> {
                         boolean handled = false;
 
                         if (yesTask.isSuccessful() && yesTask.getResult() != null && yesTask.getResult().exists()) {
@@ -122,7 +128,7 @@ public class CheckInAlarmReceiver extends BroadcastReceiver {
                         }
 
                         // 3. Fallback: Query today's attendance record
-                        db.collection("attendance").document(todayRecordId).get().addOnCompleteListener(todayTask -> {
+                        finalDb.collection("attendance").document(todayRecordId).get().addOnCompleteListener(todayTask -> {
                             boolean skipAlarm = false;
 
                             if (todayTask.isSuccessful() && todayTask.getResult() != null && todayTask.getResult().exists()) {
