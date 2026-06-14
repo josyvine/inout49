@@ -1,4 +1,4 @@
-package com.inout.app; 
+package com.inout.app;
 
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -65,12 +65,6 @@ public class EmployeeProfileActivity extends AppCompatActivity {
         
         // 3. Save Button Listener
         binding.btnSaveProfile.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onCreate(View v) {
-                // Avoid using overridden onCreate in listener context. 
-                // Handled in regular onClick pattern below.
-            }
-
             @Override
             public void onClick(View v) {
                 validateAndSave();
