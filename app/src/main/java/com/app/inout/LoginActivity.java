@@ -43,7 +43,7 @@ import com.inout.app.utils.FirebaseManager;
  * DYNAMIC BYPASS:
  * - Google Sign-In is executed on the [DEFAULT] app linked to CentralConfig.
  * - Profiles and User Firestore records are stored on the secondary named app "admin_app" 
- *   using aligned Anonymous UIDs to keep your original security rules untouched.
+ *   using aligned persistent Email/Password UIDs to keep your original security rules untouched.
  */
 public class LoginActivity extends AppCompatActivity {
 
@@ -100,7 +100,7 @@ public class LoginActivity extends AppCompatActivity {
         // Dynamic bypass: Request the central Web Client ID permanently
         String webClientId = CentralConfig.WEB_CLIENT_ID;
 
-        if (webClientId == null || "YOUR_CENTRAL_WEB_CLIENT_ID_HERE.apps.googleusercontent.com".equals(webClientId)) {
+        if (webClientId == null || "508928966890-1lvcph6h5tvmi2hfp06ksk1m69hgr3mg.apps.googleusercontent.com".equals(webClientId)) {
             Toast.makeText(this, "Configuration Error: Central Google Client ID not configured inside CentralConfig.java.", Toast.LENGTH_LONG).show();
             binding.btnGoogleSignIn.setEnabled(false);
             return;
@@ -123,25 +123,65 @@ public class LoginActivity extends AppCompatActivity {
         mAdView = findViewById(R.id.adView_login);
         AdRequest adRequest = new AdRequest.Builder().build();
         mAdView.loadAd(adRequest);
-
-        // Dynamic bypass: Silently authenticate anonymously on the Admin's Firestore (secondary app)
-        // This is crucial to bypass their SHA-1 requirements while maintaining DB security locks.
-        performSilentAnonymousAuth();
     }
 
-    private void performSilentAnonymousAuth() {
+    /**
+     * Silently authenticates the user on the secondary Admin database ("admin_app")
+     * using their verified Google identity and a mathematically computed secure password.
+     */
+    private void authenticateSecondaryApp(FirebaseUser firebaseUser, OnCompleteListener<AuthResult> onComplete) {
         try {
             FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
             FirebaseAuth adminAuth = FirebaseAuth.getInstance(adminApp);
-            if (adminAuth.getCurrentUser() == null) {
-                adminAuth.signInAnonymously()
-                        .addOnSuccessListener(authResult -> Log.d(TAG, "Silent Anonymous authentication successful on admin_app."))
-                        .addOnFailureListener(e -> Log.e(TAG, "Silent Anonymous authentication failed on admin_app.", e));
-            } else {
-                Log.d(TAG, "admin_app anonymous session already active.");
+            
+            String email = firebaseUser.getEmail();
+            String googleUid = firebaseUser.getUid();
+            
+            if (email == null || email.isEmpty()) {
+                Log.e(TAG, "Email is missing from verified Google account.");
+                Toast.makeText(this, "Authentication failed. Google Email required.", Toast.LENGTH_LONG).show();
+                return;
             }
+
+            String securePassword = calculateSecurePassword(email, googleUid);
+
+            // Silently attempt login
+            adminAuth.signInWithEmailAndPassword(email, securePassword)
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            Log.d(TAG, "Silent email/password sign-in successful on admin_app.");
+                            onComplete.onComplete(task);
+                        } else {
+                            // If account does not exist on Admin's project yet, silently register them
+                            Log.d(TAG, "Secondary account does not exist. Attempting silent registration.");
+                            adminAuth.createUserWithEmailAndPassword(email, securePassword)
+                                    .addOnCompleteListener(onComplete);
+                        }
+                    });
         } catch (Exception e) {
-            Log.e(TAG, "Error executing silent anonymous initialization.", e);
+            Log.e(TAG, "Error executing secondary silent authentication.", e);
+        }
+    }
+
+    /**
+     * Generates a predictable, secure, and unique 16-character password 
+     * based on a cryptographic SHA-256 hash of their credentials.
+     */
+    private String calculateSecurePassword(String email, String googleUid) {
+        try {
+            String input = email + googleUid + "InOutAppSecurePasswordSalt2026";
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString().substring(0, 16);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to compute secure password hash.", e);
+            return "FallbackPass123!";
         }
     }
 
@@ -150,29 +190,20 @@ public class LoginActivity extends AppCompatActivity {
         super.onStart();
         FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser != null) {
-            // Defensive timing check: Ensure secondary Anonymous Auth has completed before checking database records
-            try {
-                FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
-                FirebaseAuth adminAuth = FirebaseAuth.getInstance(adminApp);
-                if (adminAuth.getCurrentUser() != null) {
+            binding.progressBar.setVisibility(View.VISIBLE);
+            
+            // Asynchronous gate: Ensure persistent secondary Email/Password login succeeds before reading Firestore records
+            authenticateSecondaryApp(currentUser, task -> {
+                binding.progressBar.setVisibility(View.GONE);
+                if (task.isSuccessful()) {
                     checkUserInFirestore(currentUser);
                 } else {
-                    binding.progressBar.setVisibility(View.VISIBLE);
-                    adminAuth.signInAnonymously()
-                            .addOnSuccessListener(authResult -> {
-                                binding.progressBar.setVisibility(View.GONE);
-                                checkUserInFirestore(currentUser);
-                            })
-                            .addOnFailureListener(e -> {
-                                binding.progressBar.setVisibility(View.GONE);
-                                Log.e(TAG, "Failed to establish secondary anonymous session on start.", e);
-                                Toast.makeText(LoginActivity.this, "Database Connection Error. Please retry.", Toast.LENGTH_SHORT).show();
-                            });
+                    Log.e(TAG, "Secondary persistent authentication failed onStart.", task.getException());
+                    Toast.makeText(LoginActivity.this, "Database Connection Failed. Please retry.", Toast.LENGTH_SHORT).show();
+                    mAuth.signOut();
+                    updateUI(null);
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Error checking secondary login state in onStart", e);
-                checkUserInFirestore(currentUser);
-            }
+            });
         }
     }
 
@@ -191,7 +222,22 @@ public class LoginActivity extends AppCompatActivity {
                     public void onComplete(@NonNull Task<AuthResult> task) {
                         if (task.isSuccessful()) {
                             FirebaseUser user = mAuth.getCurrentUser();
-                            checkUserInFirestore(user);
+                            if (user != null) {
+                                binding.progressBar.setVisibility(View.VISIBLE);
+                                
+                                // Perform silent Email/Password registration/login on the Admin project
+                                authenticateSecondaryApp(user, secondaryTask -> {
+                                    binding.progressBar.setVisibility(View.GONE);
+                                    if (secondaryTask.isSuccessful()) {
+                                        checkUserInFirestore(user);
+                                    } else {
+                                        Log.e(TAG, "Secondary persistent authentication failed on login handshake.", secondaryTask.getException());
+                                        Toast.makeText(LoginActivity.this, "Failed to connect to dynamic database.", Toast.LENGTH_SHORT).show();
+                                        mAuth.signOut();
+                                        updateUI(null);
+                                    }
+                                });
+                            }
                         } else {
                             Log.w(TAG, "signInWithCredential:failure", task.getException());
                             Toast.makeText(LoginActivity.this, "Firebase Authentication Failed.", Toast.LENGTH_SHORT).show();
@@ -204,13 +250,13 @@ public class LoginActivity extends AppCompatActivity {
     private void checkUserInFirestore(FirebaseUser firebaseUser) {
         if (firebaseUser == null) return;
 
-        // Get the Anonymous UID of the admin_app to match your original ruleset
+        // Get the permanent, local Email/Password UID from the secondary app to match your original ruleset
         String adminUid = null;
         try {
             FirebaseApp adminApp = FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME);
             adminUid = FirebaseAuth.getInstance(adminApp).getUid();
         } catch (Exception e) {
-            Log.e(TAG, "Error retrieving dynamic UID from secondary app.", e);
+            Log.e(TAG, "Error retrieving persistent UID from secondary app.", e);
         }
 
         if (adminUid == null) {
