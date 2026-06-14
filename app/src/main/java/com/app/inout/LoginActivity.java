@@ -100,7 +100,8 @@ public class LoginActivity extends AppCompatActivity {
         // Dynamic bypass: Request the central Web Client ID permanently
         String webClientId = CentralConfig.WEB_CLIENT_ID;
 
-        if (webClientId == null || "508928966890-1lvcph6h5tvmi2hfp06ksk1m69hgr3mg.apps.googleusercontent.com".equals(webClientId)) {
+        // FIXED: The comparison compares against the original placeholder so your real credentials pass successfully.
+        if (webClientId == null || "YOUR_CENTRAL_WEB_CLIENT_ID_HERE.apps.googleusercontent.com".equals(webClientId)) {
             Toast.makeText(this, "Configuration Error: Central Google Client ID not configured inside CentralConfig.java.", Toast.LENGTH_LONG).show();
             binding.btnGoogleSignIn.setEnabled(false);
             return;
