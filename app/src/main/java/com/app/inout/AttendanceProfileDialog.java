@@ -17,6 +17,7 @@ import androidx.fragment.app.DialogFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.bumptech.glide.Glide;
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.Query;
@@ -25,6 +26,7 @@ import com.inout.app.databinding.DialogAttendanceProfileBinding;
 import com.inout.app.models.AttendanceRecord;
 import com.inout.app.models.User;
 import com.inout.app.utils.EncryptionHelper;
+import com.inout.app.utils.FirebaseManager;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -38,6 +40,8 @@ import java.util.Map;
  * Professional Pop-up Window for Attendance Profile.
  * Features: Fixed CV-Header, Horizontal 14-column CSV Table, Full Month Report.
  * UPDATED: Integrated Remarks and Emergency Leave logic for Monthly Export.
+ * DYNAMIC BYPASS:
+ * - Redirects all Firestore reads to the secondary named app instance "admin_app".
  */
 public class AttendanceProfileDialog extends DialogFragment {
 
@@ -76,7 +80,15 @@ public class AttendanceProfileDialog extends DialogFragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        db = FirebaseFirestore.getInstance();
+        
+        // Initialize Firestore pointing to the secondary named "admin_app" instance
+        try {
+            db = FirebaseFirestore.getInstance(FirebaseApp.getInstance(FirebaseManager.ADMIN_APP_NAME));
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "Secondary admin_app not initialized yet. Falling back to default Firestore.", e);
+            db = FirebaseFirestore.getInstance();
+        }
+
         fullMonthList = new ArrayList<>();
 
         setupHeader();
@@ -152,7 +164,7 @@ public class AttendanceProfileDialog extends DialogFragment {
                 })
                 .addOnFailureListener(e -> {
                     binding.progressBar.setVisibility(View.GONE);
-                    Log.e(TAG, "Data fetch failed", e);
+                    Log.e(TAG, "Data fetch failed from secondary database.", e);
                     Toast.makeText(getContext(), "Error loading month records", Toast.LENGTH_SHORT).show();
                 });
     }
